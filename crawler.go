@@ -1,14 +1,19 @@
 package main
 
 import (
-  "fmt"
   "github.com/gocolly/colly"
-  "net/url"
-  "regexp"
-  "strings"
   "io"
+  "log"
   "net/http"
+  "net/url"
   "os"
+  "regexp"
+  "time"
+  "strconv"
+  "archive/zip"
+  "path/filepath"
+  "strings"
+  "fmt"
 )
 
 func main() {
@@ -22,7 +27,13 @@ func crawl() {
   id_input := "B07BDXRQPC"
   fmt.Scanln(&id_input)
 
-  product_ids := strings.Split(id_input, ",")
+  productIds := strings.Split(id_input, ",")
+
+  var successCount int
+  timeNowStr := strconv.Itoa(int(time.Now().UnixNano()))
+  zipSavePath := "assets/" + timeNowStr + ".zip"
+  preSavePath := "assets/" + timeNowStr + "/"
+  os.MkdirAll(preSavePath, os.ModePerm)
 
   c := colly.NewCollector(
     colly.Async(true),
@@ -30,32 +41,34 @@ func crawl() {
 
   c.OnHTML("#imgTagWrapperId img", func(e *colly.HTMLElement) {
     decodedValue, _ := url.QueryUnescape(e.Attr("src"))
-    product_name := e.Attr("alt") + ".png"
-    r, _ := regexp.Compile(`\|(.{15})\|`)
+    productName := preSavePath + e.Attr("alt") + ".png"
+    designRegex, _ := regexp.Compile(`\|(.{15})\|`)
 
-    if len(r.FindStringSubmatch(decodedValue)) > 0 {
-      filePath := r.FindStringSubmatch(decodedValue)[1]
+    if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
+      filePath := designRegex.FindStringSubmatch(decodedValue)[1]
       fileUrl := "https://m.media-amazon.com/images/I/" + filePath
-      DownloadFile(product_name, fileUrl)
-      fmt.Println("Downloaded: " + product_name)
+      DownloadFile(productName, fileUrl)
+      log.Println("Downloaded:", productName)
+      successCount ++
     } else {
-      fmt.Println("Failed:", product_name)
+      log.Println("Failed:", productName)
     }
   })
 
   c.OnRequest(func(r *colly.Request) {
-    fmt.Println("Visiting", r.URL)
+    log.Println("Visiting:", r.URL)
   })
 
-  for _, product_id := range product_ids {
-    c.Visit("https://www.amazon.com/dp/" + product_id)
+  for _, productId := range productIds {
+    c.Visit("https://www.amazon.com/dp/" + productId)
   }
 
   c.Wait()
+  zipit(preSavePath, zipSavePath)
+  os.RemoveAll(preSavePath)
 }
 
 func DownloadFile(filepath string, url string) error {
-
 	// Get the data
 	resp, err := http.Get(url)
 	if err != nil {
@@ -72,5 +85,68 @@ func DownloadFile(filepath string, url string) error {
 
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+// ZIP FILE
+func zipit(source, target string) error {
+	zipfile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer zipfile.Close()
+
+	archive := zip.NewWriter(zipfile)
+	defer archive.Close()
+
+	info, err := os.Stat(source)
+	if err != nil {
+		return nil
+	}
+
+	var baseDir string
+	if info.IsDir() {
+		baseDir = filepath.Base(source)
+	}
+
+	filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+
+		if baseDir != "" {
+			header.Name = filepath.Join(baseDir, strings.TrimPrefix(path, source))
+		}
+
+		if info.IsDir() {
+			header.Name += "/"
+		} else {
+			header.Method = zip.Deflate
+		}
+
+		writer, err := archive.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		_, err = io.Copy(writer, file)
+		return err
+	})
+
+  log.Println("Ziped:", target)
 	return err
 }
