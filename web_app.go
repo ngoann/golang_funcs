@@ -3,6 +3,7 @@ package main
 import (
   "encoding/json"
   "github.com/gocolly/colly"
+  "github.com/gocolly/colly/proxy"
   "html/template"
   "io"
   "log"
@@ -10,24 +11,69 @@ import (
   "net/url"
   "os"
   "regexp"
-  "time"
-  "strconv"
   "archive/zip"
   "path/filepath"
   "strings"
+  "math/rand"
+  "github.com/gorilla/mux"
+  "github.com/rs/cors"
 )
 
 type PageVariables struct {}
 
 type Response struct {
   Url    string
-  Downloaded int
+  Status bool
+}
+
+var proxyServers = []string{
+  "http://110.44.128.200:3128",
+  "http://117.2.165.159:53281",
+  "http://121.50.44.14:3128",
+  "http://133.130.111.34:60088",
+  "http://139.162.109.91:3128",
+  "http://140.227.123.218:3128",
+  "http://140.227.123.220:3128",
+  "http://140.227.123.232:3128",
+  "http://150.95.178.151:8888",
+  "http://153.142.70.170:8080",
+  "http://161.202.226.194:8123",
+  "http://163.43.108.114:8080",
+  "http://173.82.74.62:5836",
+  "http://173.82.78.187:5836",
+  "http://18.166.13.99:8080",
+  "http://209.97.137.39:80",
+  "http://27.72.29.159:8080",
+  "http://3.19.234.208:3128",
+  "http://34.68.103.187:3128",
+  "http://34.72.12.158:3128",
+  "http://34.95.207.212:3128",
+  "http://45.77.27.87:8080",
+  "http://68.183.121.227:3128",
 }
 
 func main() {
-	http.HandleFunc("/", HomePage)
-	http.HandleFunc("/download", DownloadHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+  port := os.Getenv("PORT")
+  r := mux.NewRouter()
+
+  // Handle API routes
+  api := r.PathPrefix("/").Subrouter()
+  api.HandleFunc("/", HomePage)
+  api.HandleFunc("/download", DownloadHandler)
+
+  // Serve static files
+  r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir("assets/"))))
+
+  handlerCORS := cors.Default().Handler(r)
+
+  srv := &http.Server{
+    Handler:      handlerCORS,
+    Addr:         "0.0.0.0:" + port,
+    // WriteTimeout: 15 * time.Second,
+    // ReadTimeout:  15 * time.Second,
+  }
+  log.Println("http://0.0.0.0:" + port)
+  log.Fatal(srv.ListenAndServe())
 }
 
 func HomePage(w http.ResponseWriter, r *http.Request){
@@ -47,9 +93,9 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request){
   r.ParseForm()
 
   if r.Method == http.MethodPost {
-    productIds := r.Form["product_ids[]"]
-    link, successCount := crawl(productIds)
-    res := Response{link, successCount}
+    productId := r.Form.Get("product_id")
+    link, status := Crawl(productId)
+    res := Response{link, status}
 
     js, err := json.Marshal(res)
     if err != nil {
@@ -64,45 +110,53 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request){
   }
 }
 
-func crawl(productIds []string) (string, int) {
-  var successCount int
-  timeNowStr := strconv.Itoa(int(time.Now().UnixNano()))
-  zipSavePath := "assets/" + timeNowStr + ".zip"
-  preSavePath := "assets/" + timeNowStr + "/"
+func Crawl(productId string) (string, bool) {
+  preSavePath := "assets/"
+  productName := preSavePath + productId + ".png"
   os.MkdirAll(preSavePath, os.ModePerm)
 
-  c := colly.NewCollector(
-    // colly.Async(true),
-  )
+  c := colly.NewCollector()
 
-  c.OnHTML("#imgTagWrapperId img", func(e *colly.HTMLElement) {
-    decodedValue, _ := url.QueryUnescape(e.Attr("src"))
-    productName := preSavePath + e.Attr("alt") + ".png"
-    designRegex, _ := regexp.Compile(`\|(.{15})\|`)
+  var downloaded bool;
+  for i := 0; i < 10; i++ {
+    randomIndex := rand.Intn(len(proxyServers))
+    pickProxyServer := proxyServers[randomIndex]
 
-    if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
-      filePath := designRegex.FindStringSubmatch(decodedValue)[1]
-      fileUrl := "https://m.media-amazon.com/images/I/" + filePath
-      DownloadFile(productName, fileUrl)
-      log.Println("Downloaded:", productName)
-      successCount ++
-    } else {
-      log.Println("Failed:", productName)
+    c = colly.NewCollector(
+      colly.AllowURLRevisit(),
+    )
+
+    rp, err := proxy.RoundRobinProxySwitcher(pickProxyServer)
+    if err != nil {
+    	log.Fatal(err)
     }
-  })
+    c.SetProxyFunc(rp)
 
-  c.OnRequest(func(r *colly.Request) {
-    log.Println("Visiting:", r.URL)
-  })
+    c.OnHTML("#imgTagWrapperId img", func(e *colly.HTMLElement) {
+      decodedValue, _ := url.QueryUnescape(e.Attr("src"))
+      designRegex, _ := regexp.Compile(`\|(.{15})\|`)
 
-  for _, productId := range productIds {
+      if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
+        filePath := designRegex.FindStringSubmatch(decodedValue)[1]
+        fileUrl := "https://m.media-amazon.com/images/I/" + filePath
+        DownloadFile(productName, fileUrl)
+        log.Println("Downloaded:", productName)
+        downloaded = true
+      } else {
+        log.Println("Failed:", productName)
+      }
+    })
+
+    c.OnRequest(func(r *colly.Request) {
+      log.Println("Visiting:", r.URL, i + 1, pickProxyServer)
+    })
+
     c.Visit("https://www.amazon.com/dp/" + productId)
+    if downloaded {
+      break
+    }
   }
-
-  // c.Wait()
-  zipit(preSavePath, zipSavePath)
-  os.RemoveAll(preSavePath)
-  return zipSavePath, successCount
+  return productName, downloaded
 }
 
 func DownloadFile(filepath string, url string) error {
