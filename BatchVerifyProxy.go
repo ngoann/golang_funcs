@@ -27,9 +27,12 @@ func init() {
 
 func main() {
 	GetProxies()
+	GetDataFromFreeProxy()
+
+	log.Println("Ready proxy:", len(proxyServers))
 
 	c := colly.NewCollector()
-  log.Println("=====START=====")
+  log.Println("========START========")
 
 	createErr := ioutil.WriteFile("ready_proxy_servers.txt", []byte(""), 0644)
   if createErr != nil {
@@ -52,8 +55,12 @@ func main() {
   	c.OnResponse(func(r *colly.Response) {
 			dataWriter.WriteString(proxyServer + "\n")
 			dataWriter.Flush()
-      log.Println("IP OK:", proxyServer)
+      log.Println("Checking IP:", proxyServer, "->OK")
   	})
+
+		c.OnError(func(r *colly.Response, err error) {
+			log.Println("Checking IP:", proxyServer, "->Failed")
+		})
 
     rp, err := proxy.RoundRobinProxySwitcher(proxyServer)
     if err != nil {
@@ -68,8 +75,7 @@ func main() {
 }
 
 func GetProxies() {
-	proxyServers = []string{}
-
+	log.Println("Visiting to file...")
 	file, err := os.Open("proxy_servers.txt")
 	if err != nil {
 		log.Fatal(err)
@@ -84,4 +90,28 @@ func GetProxies() {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func GetDataFromFreeProxy() {
+	urlList := []string{"https://free-proxy-list.net"}
+
+	c := colly.NewCollector(
+		colly.Async(true),
+	)
+
+	for _, url := range urlList {
+		c.OnHTML("#proxylisttable tbody tr", func(e *colly.HTMLElement) {
+			if e.ChildText("td:nth-child(7)") == "yes" {
+				proxyFull := "http://" + e.ChildText("td:nth-child(1)") + ":" + e.ChildText("td:nth-child(2)")
+				proxyServers = append(proxyServers, proxyFull)
+			}
+    })
+
+    c.OnRequest(func(r *colly.Request) {
+      log.Println("Visiting:", r.URL)
+    })
+
+		c.Visit(url)
+	}
+	c.Wait()
 }
