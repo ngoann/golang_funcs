@@ -30,14 +30,17 @@ func main() {
 	GetDataFromFreeProxy()
 
 	log.Println("Ready proxy:", len(proxyServers))
+	CheckingIP()
+}
 
+func CheckingIP() {
 	c := colly.NewCollector()
-  log.Println("========START========")
+	log.Println("========START========")
 
 	createErr := ioutil.WriteFile("ready_proxy_servers.txt", []byte(""), 0644)
-  if createErr != nil {
-    log.Fatal(createErr)
-  }
+	if createErr != nil {
+		log.Fatal(createErr)
+	}
 
 	successProxyFile, err := os.OpenFile("ready_proxy_servers.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
@@ -48,30 +51,30 @@ func main() {
 	dataWriter := bufio.NewWriter(successProxyFile)
 
 	for _, proxyServer := range proxyServers {
-    c = colly.NewCollector(
-      colly.AllowURLRevisit(),
-    )
+		c = colly.NewCollector(
+			colly.AllowURLRevisit(),
+		)
 
-  	c.OnResponse(func(r *colly.Response) {
+		c.OnResponse(func(r *colly.Response) {
 			dataWriter.WriteString(proxyServer + "\n")
 			dataWriter.Flush()
-      log.Println("Checking IP:", proxyServer, "->OK")
-  	})
+			log.Println("Checking IP:", proxyServer, "->OK")
+		})
 
 		c.OnError(func(r *colly.Response, err error) {
 			log.Println("Checking IP:", proxyServer, "->Failed")
 		})
 
-    rp, err := proxy.RoundRobinProxySwitcher(proxyServer)
-    if err != nil {
-      log.Fatal(err)
-    }
-    c.SetProxyFunc(rp)
+		rp, err := proxy.RoundRobinProxySwitcher(proxyServer)
+		if err != nil {
+			log.Fatal(err)
+		}
+		c.SetProxyFunc(rp)
 		c.Visit("https://httpbin.org/ip")
 	}
 
 	successProxyFile.Close()
-  log.Println("=====DONE=====")
+	log.Println("========DONE========")
 }
 
 func GetProxies() {
