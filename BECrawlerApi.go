@@ -130,6 +130,16 @@ func Crawl(productId string) (string, bool) {
   return fileUrl, getSuccess
 }
 
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func RandomString() string {
+  b := make([]byte, rand.Intn(10)+10)
+  for i := range b {
+    b[i] = letterBytes[rand.Intn(len(letterBytes))]
+  }
+  return string(b)
+}
+
 func CrawlWithoutProxy(productId string) (bool, string) {
   var status bool
   var fileUrl string
@@ -150,6 +160,7 @@ func CrawlWithoutProxy(productId string) (bool, string) {
   })
 
   c.OnRequest(func(r *colly.Request) {
+    r.Headers.Set("User-Agent", RandomString())
     log.Println("Visiting:", r.URL)
   })
 
