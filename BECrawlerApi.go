@@ -8,6 +8,7 @@ import (
   "net/http"
   "net/url"
   "os"
+  "io"
   "regexp"
   "math/rand"
   "github.com/gorilla/mux"
@@ -90,7 +91,7 @@ func Crawl(productId string) (string, bool) {
   c := colly.NewCollector()
 
   var getSuccess bool;
-  for i := 0; i < 10; i++ {
+  for i := 0; i < 0; i++ {
     randomIndex := rand.Intn(len(proxyServers))
     pickProxyServer := proxyServers[randomIndex]
 
@@ -152,7 +153,8 @@ func CrawlWithoutProxy(productId string) (bool, string) {
     if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
       filePath := designRegex.FindStringSubmatch(decodedValue)[1]
       fileUrl = "https://m.media-amazon.com/images/I/" + filePath
-      log.Println(productId, ":", fileUrl, " -> OK")
+      DownloadFile("images/" + productId + ".png", fileUrl)
+      log.Println(productId, ":", productId, " -> OK")
       status = true
     } else {
       log.Println(productId, ":", " -> Failed")
@@ -186,4 +188,24 @@ func GetProxyFromFile() {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func DownloadFile(filepath string, url string) error {
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	return err
 }

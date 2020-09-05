@@ -89,10 +89,12 @@
         })
 
         function sendAjax(productId) {
+          // var ports = [8080, 8081, 8082, 8083, 8084, 8085]
           var ports = [8080]
           var port = ports[Math.floor(Math.random() * ports.length)]
 
           $.ajax({
+            // url: 'http://149.28.155.2:' + `${port}/download`,
             url: 'http://0.0.0.0:' + `${port}/download`,
             type: 'POST',
             dataType: 'JSON',
@@ -108,6 +110,8 @@
                 $(`.listRes #${productId}`).find('.response').html(`<a class="btnRedownload" data-id="${productId}" href="#">Redownload</a>`)
               }
             }
+          }).always(function() {
+            $('.listRes .btnRedownload').click()
           })
         }
       });
