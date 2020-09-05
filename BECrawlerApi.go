@@ -40,7 +40,7 @@ func init() {
 }
 
 func checkingValid() {
-  resp, err := http.PostForm("http://66.42.99.210:8888/checking/valid",	url.Values{"computer_code": {strconv.Itoa(int(macUint64()))}})
+  resp, err := http.PostForm("http://128.199.164.114:8888/checking/valid",	url.Values{"computer_code": {strconv.Itoa(int(macUint64()))}})
 
   if err != nil {
     enabled = false
