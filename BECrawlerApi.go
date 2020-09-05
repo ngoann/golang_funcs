@@ -1,69 +1,109 @@
 package main
 
 import (
+  "bytes"
   "encoding/json"
   "github.com/gocolly/colly"
-  "github.com/gocolly/colly/proxy"
+  "github.com/gorilla/mux"
+  "github.com/rs/cors"
+  "html/template"
+  "io"
   "log"
+  "math/rand"
+  "net"
   "net/http"
   "net/url"
   "os"
-  "io"
+  "os/exec"
   "regexp"
-  "math/rand"
-  "github.com/gorilla/mux"
-  "github.com/rs/cors"
-  "bufio"
+  "runtime"
+  "strconv"
 )
 
 type PageVariables struct {}
 
 type Response struct {
   Url    string
-  Status bool
+  Status int
 }
 
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const timeChecking = 20
 var proxyServers = []string{}
+var processCount int
+var enabled bool
+var result map[string]interface{}
 
 func init() {
-	env := os.Getenv("ENV")
+  log.Println("Your computer CODE:", strconv.Itoa(int(macUint64())))
+  checkingValid()
+}
 
-	if env == "production" {
-		file, err := os.OpenFile("logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-		if err != nil {
-			log.Fatal(err)
-		}
+func checkingValid() {
+  resp, err := http.PostForm("http://66.42.99.210:8888/checking/valid",	url.Values{"computer_code": {strconv.Itoa(int(macUint64()))}})
 
-		log.SetOutput(file)
-	}
+  if err != nil {
+    enabled = false
+    log.Println("[ERROR] May chu xay ra loi, vui long lien he ADMIN de duoc xu ly!")
+  } else {
+    if resp.StatusCode == 200 {
+      enabled = true
+    } else {
+      log.Println("[WARN] Tool cua ban da het han hoac may cua ban khong duoc phep su dung!")
+      enabled = false
+    }
+  }
 }
 
 func main() {
-  port := os.Getenv("PORT")
   r := mux.NewRouter()
+  r.PathPrefix("/images/").Handler(http.StripPrefix("/images/", http.FileServer(http.Dir("images/"))))
 
-  // Handle API routes
   api := r.PathPrefix("/").Subrouter()
+  api.HandleFunc("/", HomePage)
   api.HandleFunc("/download", DownloadHandler)
 
   handlerCORS := cors.Default().Handler(r)
 
   srv := &http.Server{
-    Handler:      handlerCORS,
-    Addr:         "0.0.0.0:" + port,
-    // WriteTimeout: 15 * time.Second,
-    // ReadTimeout:  15 * time.Second,
+    Handler: handlerCORS,
+    Addr: "127.0.0.1:8080",
   }
-  log.Println("http://0.0.0.0:" + port)
+  if enabled {
+    log.Println("Visit to http://127.0.0.1:8080")
+    openBrowser("http://127.0.0.1:8080")
+  }
   log.Fatal(srv.ListenAndServe())
 }
 
+func HomePage(w http.ResponseWriter, r *http.Request){
+    HomePageVars := PageVariables{}
+
+    t, err := template.ParseFiles("index.html")
+    if err != nil {
+  	  log.Print("Template parsing error: ", err)
+  	}
+
+    err = t.Execute(w, HomePageVars)
+    if err != nil {
+  	  log.Print("Template executing error: ", err)
+  	}
+}
+
 func DownloadHandler(w http.ResponseWriter, r *http.Request){
+  if !enabled {
+    return
+  }
   r.ParseForm()
+
+  if processCount == timeChecking {
+    processCount = 0
+    checkingValid()
+  }
 
   if r.Method == http.MethodPost {
     productId := r.Form.Get("product_id")
-    link, status := Crawl(productId)
+    link, status := CrawlWithoutProxy(productId)
     res := Response{link, status}
 
     js, err := json.Marshal(res)
@@ -79,60 +119,6 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request){
   }
 }
 
-func Crawl(productId string) (string, bool) {
-  GetProxyFromFile()
-
-  crawlStatus, fileUrl := CrawlWithoutProxy(productId)
-
-  if crawlStatus {
-    return fileUrl, crawlStatus
-  }
-
-  c := colly.NewCollector()
-
-  var getSuccess bool;
-  for i := 0; i < 0; i++ {
-    randomIndex := rand.Intn(len(proxyServers))
-    pickProxyServer := proxyServers[randomIndex]
-
-    c = colly.NewCollector(
-      colly.AllowURLRevisit(),
-    )
-
-    rp, err := proxy.RoundRobinProxySwitcher(pickProxyServer)
-    if err != nil {
-    	log.Fatal(err)
-    }
-    c.SetProxyFunc(rp)
-
-    c.OnHTML("#imgTagWrapperId img", func(e *colly.HTMLElement) {
-      decodedValue, _ := url.QueryUnescape(e.Attr("src"))
-      designRegex, _ := regexp.Compile(`\|(.{15})\|`)
-
-      if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
-        filePath := designRegex.FindStringSubmatch(decodedValue)[1]
-        fileUrl = "https://m.media-amazon.com/images/I/" + filePath
-        log.Println(productId, ":", fileUrl, " -> OK")
-        getSuccess = true
-      } else {
-        log.Println(productId, ":", " -> Failed")
-      }
-    })
-
-    c.OnRequest(func(r *colly.Request) {
-      log.Println("Visiting:", r.URL, i + 1, pickProxyServer)
-    })
-
-    c.Visit("https://www.amazon.com/dp/" + productId)
-    if getSuccess {
-      break
-    }
-  }
-  return fileUrl, getSuccess
-}
-
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
 func RandomString() string {
   b := make([]byte, rand.Intn(10)+10)
   for i := range b {
@@ -141,9 +127,10 @@ func RandomString() string {
   return string(b)
 }
 
-func CrawlWithoutProxy(productId string) (bool, string) {
-  var status bool
+func CrawlWithoutProxy(productId string) (string, int) {
+  var status int
   var fileUrl string
+  var fileName string
   c := colly.NewCollector()
 
   c.OnHTML("#imgTagWrapperId img", func(e *colly.HTMLElement) {
@@ -153,11 +140,15 @@ func CrawlWithoutProxy(productId string) (bool, string) {
     if len(designRegex.FindStringSubmatch(decodedValue)) > 0 {
       filePath := designRegex.FindStringSubmatch(decodedValue)[1]
       fileUrl = "https://m.media-amazon.com/images/I/" + filePath
-      DownloadFile("images/" + productId + ".png", fileUrl)
-      log.Println(productId, ":", productId, " -> OK")
-      status = true
+      fileName = "images/" + productId + ".png"
+
+      DownloadFile(fileName, fileUrl)
+      status = 1
+      processCount++
+      log.Println("Download:", productId, "-> OK")
     } else {
-      log.Println(productId, ":", " -> Failed")
+      status = 2
+      log.Println("Download:", productId, "-> Reject")
     }
   })
 
@@ -168,44 +159,68 @@ func CrawlWithoutProxy(productId string) (bool, string) {
 
   c.Visit("https://www.amazon.com/dp/" + productId)
 
-  return status, fileUrl
-}
-
-func GetProxyFromFile() {
-	proxyServers = []string{}
-
-	file, err := os.Open("ready_proxy_servers.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		proxyServers = append(proxyServers, scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
+  return fileName, status
 }
 
 func DownloadFile(filepath string, url string) error {
-	// Get the data
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	// Create the file
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+func macUint64() uint64 {
+  interfaces, err := net.Interfaces()
+  if err != nil {
+      return uint64(0)
+  }
+
+  for _, i := range interfaces {
+    if i.Flags&net.FlagUp != 0 && bytes.Compare(i.HardwareAddr, nil) != 0 {
+
+      // Skip locally administered addresses
+      if i.HardwareAddr[0]&2 == 2 {
+          continue
+      }
+
+      var mac uint64
+      for j, b := range i.HardwareAddr {
+        if j >= 8 {
+            break
+        }
+        mac <<= 8
+        mac += uint64(b)
+      }
+
+      return mac
+    }
+  }
+
+  return uint64(0)
+}
+
+func openBrowser(url string) {
+	var err error
+
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
 }
