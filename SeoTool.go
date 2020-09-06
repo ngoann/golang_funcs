@@ -29,6 +29,7 @@ type Response struct {
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const timeChecking = 20
+const version = "1"
 var proxyServers = []string{}
 var processCount int
 var enabled bool
@@ -40,7 +41,11 @@ func init() {
 }
 
 func checkingValid() {
-  resp, err := http.PostForm("http://128.199.164.114:8888/checking/valid",	url.Values{"computer_code": {strconv.Itoa(int(macUint64()))}})
+  resp, err := http.PostForm("http://128.199.164.114:8888/checking/valid", url.Values{
+    "computer_code": {strconv.Itoa(int(macUint64()))},
+    "count": {strconv.Itoa(processCount)},
+    "version": {version},
+  })
 
   if err != nil {
     enabled = false
@@ -70,7 +75,7 @@ func main() {
     Addr: "127.0.0.1:8080",
   }
   if enabled {
-    log.Println("Visit to http://127.0.0.1:8080")
+    log.Println("Visit to http://127.0.0.1:8080", "Version:", version)
     openBrowser("http://127.0.0.1:8080")
   }
   log.Fatal(srv.ListenAndServe())
@@ -97,8 +102,8 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request){
   r.ParseForm()
 
   if processCount == timeChecking {
-    processCount = 0
     checkingValid()
+    processCount = 0
   }
 
   if r.Method == http.MethodPost {
