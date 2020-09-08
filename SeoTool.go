@@ -31,20 +31,26 @@ type Response struct {
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const timeChecking = 20
 const version = "1"
-var proxyServers = []string{}
+var apiURL = "http://128.199.164.114:8888"
 var processCount int
 var enabled bool
 var result map[string]interface{}
 var messageAlert string
 
 func init() {
+  env := os.Getenv("ENV")
+  if env == "development" {
+    apiURL = "http://127.0.0.1:8000"
+    log.Println("Development environment:", apiURL)
+  }
+
   messageAlert = "Welcome to SEOS TOOL V" + version
   log.Println("Your computer CODE:", strconv.Itoa(int(macUint64())))
   checkingValid()
 }
 
 func checkingValid() {
-  resp, err := http.PostForm("http://128.199.164.114:8888/checking/valid", url.Values{
+  resp, err := http.PostForm(apiURL + "/checking/valid", url.Values{
     "computer_code": {strconv.Itoa(int(macUint64()))},
     "count": {strconv.Itoa(processCount)},
     "version": {version},
@@ -67,8 +73,8 @@ func checkingValid() {
       log.Println("[WARN] Tool cua ban da het han hoac may cua ban khong duoc phep su dung!")
       enabled = false
       messageAlert = `
-      <b style="text-align: center; display: block; font-size: 24px; color: #ff5c97;">
-      TOOL của bạn đã hết hạn hoặc máy của bạn không có quyền sử dụng <br /> Vui lòng liên hệ QTV để được xử lý
+        <b style="text-align: center; display: block; font-size: 24px; color: #ff5c97;">
+        TOOL của bạn đã hết hạn hoặc máy của bạn không có quyền sử dụng <br /> Vui lòng liên hệ QTV để được xử lý
       </b>
       `
       openBrowser("http://127.0.0.1:8080/alert")
