@@ -18,6 +18,7 @@ import (
   "regexp"
   "runtime"
   "strconv"
+  "fmt"
 )
 
 type PageVariables struct {}
@@ -34,8 +35,10 @@ var proxyServers = []string{}
 var processCount int
 var enabled bool
 var result map[string]interface{}
+var messageAlert string
 
 func init() {
+  messageAlert = "Welcome to SEOS TOOL V" + version
   log.Println("Your computer CODE:", strconv.Itoa(int(macUint64())))
   checkingValid()
 }
@@ -50,12 +53,25 @@ func checkingValid() {
   if err != nil {
     enabled = false
     log.Println("[ERROR] May chu xay ra loi, vui long lien he ADMIN de duoc xu ly!")
+    messageAlert = `
+      <b style="text-align: center; display: block; font-size: 24px; color: #ff5c97;">
+        Máy chủ đang gặp 1 số vấn đề <br /> Vui lòng liên hệ QTV để được xử lý!
+      </b>
+    `
+    openBrowser("http://127.0.0.1:8080/alert")
   } else {
     if resp.StatusCode == 200 {
+      // json.NewDecoder(resp.Body).Decode(&result)
       enabled = true
     } else {
       log.Println("[WARN] Tool cua ban da het han hoac may cua ban khong duoc phep su dung!")
       enabled = false
+      messageAlert = `
+      <b style="text-align: center; display: block; font-size: 24px; color: #ff5c97;">
+      TOOL của bạn đã hết hạn hoặc máy của bạn không có quyền sử dụng <br /> Vui lòng liên hệ QTV để được xử lý
+      </b>
+      `
+      openBrowser("http://127.0.0.1:8080/alert")
     }
   }
 }
@@ -66,6 +82,7 @@ func main() {
 
   api := r.PathPrefix("/").Subrouter()
   api.HandleFunc("/", HomePage)
+  api.HandleFunc("/alert", AlertHandler)
   api.HandleFunc("/download", DownloadHandler)
 
   handlerCORS := cors.Default().Handler(r)
@@ -79,6 +96,10 @@ func main() {
     openBrowser("http://127.0.0.1:8080")
   }
   log.Fatal(srv.ListenAndServe())
+}
+
+func AlertHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, messageAlert)
 }
 
 func HomePage(w http.ResponseWriter, r *http.Request){
