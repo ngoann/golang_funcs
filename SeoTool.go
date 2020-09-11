@@ -32,7 +32,6 @@ const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const timeChecking = 20
 const version = "1"
 var apiURL = "http://128.199.164.114:8888"
-var processCount int
 var enabled bool
 var result map[string]interface{}
 var messageAlert string
@@ -46,10 +45,10 @@ func init() {
 
   messageAlert = "Welcome to SEOS TOOL V" + version
   log.Println("Your computer CODE:", strconv.Itoa(int(macUint64())))
-  checkingValid()
+  checkingValid(0)
 }
 
-func checkingValid() {
+func checkingValid(processCount int) {
   resp, err := http.PostForm(apiURL + "/checking/valid", url.Values{
     "computer_code": {strconv.Itoa(int(macUint64()))},
     "count": {strconv.Itoa(processCount)},
@@ -128,11 +127,6 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request){
   }
   r.ParseForm()
 
-  if processCount == timeChecking {
-    checkingValid()
-    processCount = 0
-  }
-
   if r.Method == http.MethodPost {
     productId := r.Form.Get("product_id")
     link, status := CrawlWithoutProxy(productId)
@@ -176,7 +170,7 @@ func CrawlWithoutProxy(productId string) (string, int) {
 
       DownloadFile(fileName, fileUrl)
       status = 1
-      processCount++
+      checkingValid(1)
       log.Println("Download:", productId, "-> OK")
     } else {
       status = 2
