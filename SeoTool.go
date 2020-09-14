@@ -31,7 +31,7 @@ type Response struct {
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const timeChecking = 20
 const version = "1"
-var apiURL = "http://128.199.164.114:8888"
+var apiURL = "https://api.seostool.site"
 var enabled bool
 var result map[string]interface{}
 var messageAlert string
