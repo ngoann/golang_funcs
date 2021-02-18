@@ -2,8 +2,10 @@ package main
 
 import (
 	// "bytes"
-	"log"
+	"encoding/csv"
+	"fmt"
 	"github.com/gocolly/colly"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -23,33 +25,63 @@ func init() {
 }
 
 func main() {
-	GetData()
+	var number int
+	fmt.Print("Nhap so luong: ")
+	fmt.Scanf("%d", &number)
+
+	GetData(number)
 }
 
-func GetData() {
+func GetData(number int) {
+	successCount := 0
+
 	c := colly.NewCollector(
 		colly.Async(true),
 	)
 
+	file, err := os.Create("result.csv")
+
+	checkError("Cannot create file", err)
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
 	c.OnHTML(".frame-1", func(e *colly.HTMLElement) {
-		log.Println(e.ChildText(".basic-face p.name"))
-		log.Println(e.ChildText(".basic-face .col-md-8 p:nth-child(5) > b"))
-		// log.Println(e.ChildText(".no-margin .input:nth-child(11)", "class"))
-		log.Println(e.ChildAttr(".no-margin div:nth-child(22) > input", "value"))
-		// if e.ChildText("td:nth-child(7)") == "yes" {
-			// 	// proxyFull := "http://" + e.ChildText("td:nth-child(1)") + ":" + e.ChildText("td:nth-child(2)")
-			// 	// proxyServers = append(proxyServers, proxyFull)
-			// }
+		if len(e.ChildText(".basic-face p.name")) > 0 {
+			log.Println(e.ChildText(".basic-face p.name"))
+			log.Println(e.ChildText(".basic-face .col-md-8 p:nth-child(5) > b"))
+			log.Println(e.ChildAttr(".no-margin div:nth-child(22) > input", "value"))
+
+			name := e.ChildText(".basic-face p.name")
+			address := e.ChildText(".basic-face .col-md-8 p:nth-child(5) > b")
+			ssn := e.ChildAttr(".no-margin div:nth-child(22) > input", "value")
+
+			var data = []string{name, address, ssn}
+
+			err = writer.Write(data)
+			checkError("Cannot write to file", err)
+
+			successCount++
+		}
 	})
 
 	// c.OnRequest(func(r *colly.Request) {
 	// 	log.Println("Visiting:", r.URL)
 	// })
 
-	for i := 0; i < 999999; i++ {
-		c.Visit("https://www.bestrandoms.com/random-identity?new=fresh&state=AK&" +  strconv.Itoa(i))
-		time.Sleep(2 * time.Second)
+	for successCount <= number {
+		now := time.Now()
+
+		c.Visit("https://www.bestrandoms.com/random-identity?new=fresh&state=AK&" +  strconv.Itoa(now.Nanosecond()))
+		time.Sleep(1 * time.Second)
 	}
 
 	c.Wait()
+}
+
+func checkError(message string, err error) {
+    if err != nil {
+        log.Fatal(message, err)
+    }
 }
